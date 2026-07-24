@@ -1,0 +1,40 @@
+name: 'Flyway PostgreSQL Migration'
+description: 'Run Flyway database migrations for PostgreSQL'
+inputs:
+  db-url:
+    description: 'Database JDBC URL'
+    required: true
+  db-user:
+    description: 'Database username'
+    required: true
+  db-password:
+    description: 'Database password'
+    required: true
+  migration-path:
+    description: 'Path to migration scripts'
+    required: true
+  schema:
+    description: 'Database schema for migrations and history table'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Download Flyway
+      run: |
+        curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.22.3/flyway-commandline-9.22.3-linux-x64.tar.gz -o flyway.tar.gz
+        tar -xzf flyway.tar.gz
+        mv flyway-9.22.3 flyway
+      shell: bash
+
+    - name: Create Flyway config
+      run: |
+        echo "flyway.url=${{ inputs.db-url }}" > flyway.conf
+        echo "flyway.user=${{ inputs.db-user }}" >> flyway.conf
+        echo "flyway.password=${{ inputs.db-password }}" >> flyway.conf
+        echo "flyway.locations=filesystem:${{ inputs.migration-path }}" >> flyway.conf
+        echo "flyway.schemas=${{ inputs.schema }}" >> flyway.conf
+      shell: bash
+
+    - name: Run Flyway migrate
+      run: ./flyway/flyway migrate
+      shell: bash
