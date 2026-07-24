@@ -10,10 +10,6 @@ inputs:
     required: true
     description: "Vercel project id"
 
-  dotenv_vault_token:
-    required: true
-    description: "Dotenv vault token"
-
   target:
     required: true
     description: "preview | production | development"
