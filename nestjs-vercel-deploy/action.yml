@@ -1,0 +1,68 @@
+name: "Vercel Deploy"
+description: "Sync dotenv vault with Vercel and deploy"
+
+inputs:
+  vercel_token:
+    required: true
+    description: "Vercel token"
+
+  vercel_project_id:
+    required: true
+    description: "Vercel project id"
+
+  dotenv_vault_token:
+    required: true
+    description: "Dotenv vault token"
+
+  target:
+    required: true
+    description: "preview | production | development"
+
+  install_command:
+    required: false
+    description: "Command to install dependencies"
+    default: "npm install"
+
+  build_command:
+    required: false
+    description: "Command to build the application"
+    default: "npm run build"
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v7.0.0
+      with:
+          node-version: "24"
+
+    - name: Install Vercel CLI
+      shell: bash
+      run: npm install --global vercel@latest
+
+    - name: Install dependencies
+      shell: bash
+      run: ${{ inputs.install_command }}
+
+    - name: Build application
+      shell: bash
+      run: ${{ inputs.build_command }}
+
+    - name: Build Vercel artifacts
+      shell: bash
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel build --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel build --token=${{ inputs.vercel_token }}
+        fi
+
+    - name: Deploy to Vercel
+      shell: bash
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel deploy --prebuilt --token=${{ inputs.vercel_token }}
+        fi
