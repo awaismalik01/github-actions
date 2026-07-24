@@ -1,0 +1,99 @@
+name: "Secure Flyway Migration"
+description: "Run Flyway migrations with per-schema credentials fetched from Infisical"
+
+inputs:
+  infisical-method:
+    description: "Infisical auth method (universal, oidc, aws-iam)"
+    required: false
+    default: "universal"
+  infisical-client-id:
+    description: "Infisical Machine Identity client ID (for universal auth)"
+    required: false
+  infisical-client-secret:
+    description: "Infisical Machine Identity client secret (for universal auth)"
+    required: false
+  infisical-identity-id:
+    description: "Infisical Machine Identity ID (for oidc/aws-iam auth)"
+    required: false
+  infisical-domain:
+    description: "Infisical instance URL"
+    required: false
+    default: "https://app.infisical.com"
+  infisical-project-slug:
+    description: "Infisical project slug"
+    required: true
+  infisical-env-slug:
+    description: "Infisical environment slug (e.g. dev, staging, prod)"
+    required: true
+  infisical-secret-path:
+    description: "Infisical secret path"
+    required: false
+    default: "/"
+  db:
+    description: "Database name prefix (e.g. GLOBIFIER_AUTH). Used to resolve {DB}_FLYWAY_USER, {DB}_FLYWAY_PASSWORD, and {DB}_DATABASE_URL from Infisical"
+    required: true
+  migration-path:
+    description: "Path to migration files"
+    required: true
+  schema:
+    description: "Database schema for migrations and history table"
+    required: false
+    default: "public"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch secrets from Infisical
+      uses: Infisical/secrets-action@v1.0.16
+      with:
+        method: ${{ inputs.infisical-method }}
+        client-id: ${{ inputs.infisical-client-id }}
+        client-secret: ${{ inputs.infisical-client-secret }}
+        identity-id: ${{ inputs.infisical-identity-id }}
+        domain: ${{ inputs.infisical-domain }}
+        project-slug: ${{ inputs.infisical-project-slug }}
+        env-slug: ${{ inputs.infisical-env-slug }}
+        secret-path: ${{ inputs.infisical-secret-path }}
+
+    - name: Resolve credentials and run migration
+      run: |
+        DB_UPPER=$(echo "${{ inputs.db }}" | tr '[:lower:]' '[:upper:]')
+
+        USER_VAR="${DB_UPPER}_FLYWAY_USER"
+        PASS_VAR="${DB_UPPER}_FLYWAY_PASSWORD"
+        URL_VAR="${DB_UPPER}_DATABASE_URL"
+
+        FLYWAY_USER="${!USER_VAR}"
+        FLYWAY_PASSWORD="${!PASS_VAR}"
+        FLYWAY_URL="${!URL_VAR}"
+
+        if [ -z "$FLYWAY_USER" ]; then
+          echo "::error::Secret ${USER_VAR} not found in Infisical"
+          exit 1
+        fi
+        if [ -z "$FLYWAY_PASSWORD" ]; then
+          echo "::error::Secret ${PASS_VAR} not found in Infisical"
+          exit 1
+        fi
+        if [ -z "$FLYWAY_URL" ]; then
+          echo "::error::Secret ${URL_VAR} not found in Infisical"
+          exit 1
+        fi
+
+        echo "::add-mask::$FLYWAY_USER"
+        echo "::add-mask::$FLYWAY_PASSWORD"
+        echo "::add-mask::$FLYWAY_URL"
+
+        echo "FLYWAY_USER=$FLYWAY_USER" >> $GITHUB_ENV
+        echo "FLYWAY_PASSWORD=$FLYWAY_PASSWORD" >> $GITHUB_ENV
+        echo "FLYWAY_URL=$FLYWAY_URL" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Run Flyway migration
+      uses: awaismalik01/github-actions/db-flyway@v1
+      with:
+        db-url: ${{ env.FLYWAY_URL }}
+        db-user: ${{ env.FLYWAY_USER }}
+        db-password: ${{ env.FLYWAY_PASSWORD }}
+        migration-path: ${{ inputs.migration-path }}
+        schema: ${{ inputs.schema }}

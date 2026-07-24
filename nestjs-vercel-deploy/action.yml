@@ -1,0 +1,81 @@
+name: "Vercel Deploy"
+description: "Sync dotenv vault with Vercel and deploy"
+
+inputs:
+  vercel_token:
+    required: true
+    description: "Vercel token"
+
+  vercel_org_id:
+    required: true
+    description: "Vercel org/team id"
+
+  vercel_project_id:
+    required: true
+    description: "Vercel project id"
+
+  target:
+    required: true
+    description: "preview | production | development"
+
+  install_command:
+    required: false
+    description: "Command to install dependencies"
+    default: "npm install"
+
+  build_command:
+    required: false
+    description: "Command to build the application"
+    default: "npm run build"
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v7.0.0
+      with:
+          node-version: "24"
+
+    - name: Install Vercel CLI
+      shell: bash
+      run: npm install --global vercel@latest
+
+    - name: Install dependencies
+      shell: bash
+      run: ${{ inputs.install_command }}
+
+    - name: Build application
+      shell: bash
+      run: ${{ inputs.build_command }}
+
+    - name: Pull Vercel project settings
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
+
+    - name: Build Vercel artifacts
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel build --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel build --token=${{ inputs.vercel_token }}
+        fi
+
+    - name: Deploy to Vercel
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel deploy --prebuilt --token=${{ inputs.vercel_token }}
+        fi
