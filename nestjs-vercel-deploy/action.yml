@@ -6,6 +6,10 @@ inputs:
     required: true
     description: "Vercel token"
 
+  vercel_org_id:
+    required: true
+    description: "Vercel org/team id"
+
   vercel_project_id:
     required: true
     description: "Vercel project id"
@@ -45,8 +49,18 @@ runs:
       shell: bash
       run: ${{ inputs.build_command }}
 
+    - name: Pull Vercel project settings
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
+
     - name: Build Vercel artifacts
       shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
         if [ "${{ inputs.target }}" = "production" ]; then
           vercel build --prod --token=${{ inputs.vercel_token }}
@@ -56,6 +70,9 @@ runs:
 
     - name: Deploy to Vercel
       shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
         if [ "${{ inputs.target }}" = "production" ]; then
           vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }}
