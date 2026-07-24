@@ -35,6 +35,10 @@ inputs:
   migration-path:
     description: "Path to migration files"
     required: true
+  schema:
+    description: "Database schema for migrations and history table"
+    required: false
+    default: "public"
 
 runs:
   using: "composite"
@@ -92,4 +96,4 @@ runs:
         db-user: ${{ env.FLYWAY_USER }}
         db-password: ${{ env.FLYWAY_PASSWORD }}
         migration-path: ${{ inputs.migration-path }}
-        schema: public
+        schema: ${{ inputs.schema }}
