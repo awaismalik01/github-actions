@@ -18,9 +18,10 @@ inputs:
     required: true
     description: "Vercel environment target (preview | production)"
 
-  env_substitutions:
-    required: true
-    description: "Space-separated list of ${VAR} placeholders to resolve in vercel.json (e.g. '${GLOBIFIER_AUTH_BE_URL} ${GLOBIFIER_AUTH_FE_URL}')"
+  vercel_json_path:
+    required: false
+    description: "Path to the vercel.json file to resolve placeholders in"
+    default: "vercel.json"
 
   infisical_method:
     required: false
@@ -78,12 +79,20 @@ runs:
     - name: Resolve env vars in vercel.json
       shell: bash
       run: |
-        # Source the secrets file to make vars available for envsubst
+        # Source secrets and build a substitution list from the file's keys only
+        ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+        VARS=""
+        while IFS='=' read -r key _; do
+          [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+          VARS="${VARS}\${${key}} "
+        done < "$ENV_FILE"
+
         set -a
-        source "${GITHUB_WORKSPACE}/.env.infisical"
+        source "$ENV_FILE"
         set +a
-        envsubst '${{ inputs.env_substitutions }}' < vercel.json > vercel.resolved.json
-        mv vercel.resolved.json vercel.json
+
+        envsubst "$VARS" < ${{ inputs.vercel_json_path }} > vercel.resolved.json
+        mv vercel.resolved.json ${{ inputs.vercel_json_path }}
 
     - name: Sync secrets to Vercel
       shell: bash

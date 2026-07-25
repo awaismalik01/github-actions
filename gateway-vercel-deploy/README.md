@@ -4,8 +4,9 @@ A reusable GitHub Action that resolves environment variable placeholders in `ver
 
 ## Features
 
-- Fetches secrets from Infisical and resolves `${VAR}` placeholders in `vercel.json` via `envsubst`
-- Syncs runtime environment variables from Infisical to Vercel (via `vercel-infisical-vault-sync`)
+- Fetches secrets from Infisical once and uses them for both placeholder resolution and Vercel env sync
+- Automatically resolves all `${VAR}` placeholders in `vercel.json` that match keys from Infisical — no manual list needed
+- Syncs runtime environment variables to Vercel via the Vercel API
 - Sets up Node.js 24 and installs project dependencies (edge-runtime packages)
 - Deploys to Vercel using prebuilt artifacts (supports preview and production targets)
 
@@ -28,7 +29,6 @@ steps:
       vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
       vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
       target: "preview"
-      env_substitutions: "${GLOBIFIER_AUTH_BE_URL} ${GLOBIFIER_AUTH_FE_URL}"
       infisical_identity_id: ${{ secrets.INFISICAL_MACHINE_ID }}
       infisical_project_slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
       infisical_env_slug: "dev"
@@ -50,7 +50,6 @@ steps:
       vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
       vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
       target: "production"
-      env_substitutions: "${GLOBIFIER_AUTH_BE_URL} ${GLOBIFIER_AUTH_FE_URL}"
       infisical_method: "universal"
       infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
       infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
@@ -66,7 +65,7 @@ steps:
 | `vercel_org_id` | Vercel org/team ID | Yes | — |
 | `vercel_project_id` | Vercel project ID | Yes | — |
 | `target` | Deployment target (`preview`, `production`) | Yes | — |
-| `env_substitutions` | Space-separated `${VAR}` placeholders to resolve in `vercel.json` | Yes | — |
+| `vercel_json_path` | Path to the vercel.json file to resolve placeholders in | No | `vercel.json` |
 | `infisical_method` | Auth method (`oidc`, `universal`, `aws-iam`) | No | `oidc` |
 | `infisical_identity_id` | Machine Identity ID (for oidc/aws-iam) | No | — |
 | `infisical_client_id` | Machine Identity client ID (for universal) | No | — |
@@ -78,19 +77,20 @@ steps:
 
 ## How It Works
 
-1. Fetches secrets from Infisical as environment variables (used for `envsubst`).
-2. Resolves `${VAR}` placeholders in `vercel.json` using `envsubst` with the specified substitution list.
-3. Syncs all Infisical secrets to the Vercel project as runtime environment variables (via `vercel-infisical-vault-sync`).
-4. Sets up Node.js 24 using `actions/setup-node@v7.0.0`.
-5. Installs the latest Vercel CLI globally.
-6. Installs project dependencies (e.g. `jose`, `@vercel/functions`).
-7. Pulls Vercel project settings for the specified environment.
-8. Builds Vercel deployment artifacts (edge functions, middleware).
-9. Deploys the prebuilt artifacts to Vercel.
+1. Fetches secrets from Infisical once (exported to a file).
+2. Reads the keys from the secrets file and builds a substitution list automatically.
+3. Sources the secrets and resolves matching `${VAR}` placeholders in `vercel.json` via `envsubst`.
+4. Syncs all secrets to the Vercel project as runtime environment variables via the Vercel API.
+5. Sets up Node.js 24 using `actions/setup-node@v7.0.0`.
+6. Installs the latest Vercel CLI globally.
+7. Installs project dependencies (e.g. `jose`, `@vercel/functions`).
+8. Pulls Vercel project settings for the specified environment.
+9. Builds Vercel deployment artifacts (edge functions, middleware).
+10. Deploys the prebuilt artifacts to Vercel.
 
 ## Notes
 
 - OIDC auth requires `id-token: write` permission in the calling workflow.
-- The `env_substitutions` input should list only the variables that appear as `${VAR}` in your `vercel.json`. This prevents `envsubst` from replacing unrelated shell variables.
+- Placeholder resolution is automatic — any key present in Infisical that appears as `${KEY}` in `vercel.json` will be resolved. No manual list to maintain.
 - Unlike `nestjs-vercel-deploy`, this action has no application build step — Vercel bundles the edge middleware directly during `vercel build`.
-- The Infisical secrets are fetched once and used for both placeholder resolution and Vercel env sync.
+- Infisical is called exactly once. The same secrets file is used for both placeholder resolution and Vercel env sync.
