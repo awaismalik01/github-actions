@@ -9,6 +9,7 @@ A collection of reusable composite GitHub Actions for CI/CD automation.
 | [db-flyway](./db-flyway) | Run Flyway database migrations against PostgreSQL |
 | [secure-flyway-migration](./secure-flyway-migration) | Fetch per-schema credentials from Infisical and run Flyway migrations |
 | [nestjs-vercel-deploy](./nestjs-vercel-deploy) | Build and deploy a Node.js/NestJS application to Vercel |
+| [vercel-infisical-vault-sync](./vercel-infisical-vault-sync) | Fetch secrets from Infisical and sync them to a Vercel project |
 
 ## Usage
 
@@ -61,6 +62,22 @@ Builds a Node.js application and deploys it to Vercel. Supports preview and prod
     vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
     vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
     target: "production"
+```
+
+### vercel-infisical-vault-sync
+
+Fetches all secrets from an Infisical project/environment and upserts them as environment variables on a Vercel project. Replaces manual Infisical-Vercel dashboard integrations.
+
+```yaml
+- uses: awaismalik01/github-actions/vercel-infisical-vault-sync@v1
+  with:
+    vercel-token: ${{ secrets.VERCEL_TOKEN }}
+    vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+    target: "production"
+    infisical-client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+    infisical-client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+    infisical-project-slug: "my-project"
+    infisical-env-slug: "prod"
 ```
 
 ## License

@@ -1,5 +1,5 @@
 name: "Vercel Deploy"
-description: "Sync dotenv vault with Vercel and deploy"
+description: "Sync Infisical secrets to Vercel and deploy"
 
 inputs:
   vercel_token:
@@ -28,10 +28,61 @@ inputs:
     description: "Command to build the application"
     default: "npm run build"
 
+  infisical_method:
+    required: false
+    description: "Infisical auth method (universal, oidc, aws-iam)"
+    default: "universal"
+
+  infisical_client_id:
+    required: false
+    description: "Infisical Machine Identity client ID (for universal auth)"
+
+  infisical_client_secret:
+    required: false
+    description: "Infisical Machine Identity client secret (for universal auth)"
+
+  infisical_identity_id:
+    required: false
+    description: "Infisical Machine Identity ID (for oidc/aws-iam)"
+
+  infisical_domain:
+    required: false
+    description: "Infisical instance URL"
+    default: "https://app.infisical.com"
+
+  infisical_project_slug:
+    required: true
+    description: "Infisical project slug"
+
+  infisical_env_slug:
+    required: true
+    description: "Infisical environment slug (e.g. dev, staging, prod)"
+
+  infisical_secret_path:
+    required: false
+    description: "Infisical secret path"
+    default: "/"
+
 runs:
   using: "composite"
 
   steps:
+    - name: Sync Infisical secrets to Vercel
+      uses: awaismalik01/github-actions/vercel-infisical-vault-sync@v1
+      with:
+        vercel-token: ${{ inputs.vercel_token }}
+        vercel-project-id: ${{ inputs.vercel_project_id }}
+        vercel-team-id: ${{ inputs.vercel_org_id }}
+        target: ${{ inputs.target }}
+        infisical-method: ${{ inputs.infisical_method }}
+        infisical-client-id: ${{ inputs.infisical_client_id }}
+        infisical-client-secret: ${{ inputs.infisical_client_secret }}
+        infisical-identity-id: ${{ inputs.infisical_identity_id }}
+        infisical-domain: ${{ inputs.infisical_domain }}
+        infisical-project-slug: ${{ inputs.infisical_project_slug }}
+        infisical-env-slug: ${{ inputs.infisical_env_slug }}
+        infisical-secret-path: ${{ inputs.infisical_secret_path }}
+
     - name: Setup Node.js
       uses: actions/setup-node@v7.0.0
       with:

@@ -1,0 +1,120 @@
+name: "Infisical → Vercel Env Sync"
+description: "Fetch environment variables from Infisical and sync them to a Vercel project"
+
+inputs:
+  vercel-token:
+    description: "Vercel API token"
+    required: true
+  vercel-project-id:
+    description: "Vercel Project ID"
+    required: true
+  vercel-team-id:
+    description: "Vercel Team ID (optional, for team-owned projects)"
+    required: false
+  target:
+    description: "Vercel environment target (development, preview, production)"
+    required: false
+    default: "preview"
+  infisical-method:
+    description: "Infisical auth method (universal, oidc, aws-iam)"
+    required: false
+    default: "universal"
+  infisical-client-id:
+    description: "Infisical Machine Identity client ID (for universal auth)"
+    required: false
+  infisical-client-secret:
+    description: "Infisical Machine Identity client secret (for universal auth)"
+    required: false
+  infisical-identity-id:
+    description: "Infisical Machine Identity ID (for oidc/aws-iam auth)"
+    required: false
+  infisical-domain:
+    description: "Infisical instance URL"
+    required: false
+    default: "https://app.infisical.com"
+  infisical-project-slug:
+    description: "Infisical project slug"
+    required: true
+  infisical-env-slug:
+    description: "Infisical environment slug (e.g. dev, staging, prod)"
+    required: true
+  infisical-secret-path:
+    description: "Infisical secret path"
+    required: false
+    default: "/"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch secrets from Infisical
+      uses: Infisical/secrets-action@v1.0.16
+      id: infisical
+      with:
+        method: ${{ inputs.infisical-method }}
+        client-id: ${{ inputs.infisical-client-id }}
+        client-secret: ${{ inputs.infisical-client-secret }}
+        identity-id: ${{ inputs.infisical-identity-id }}
+        domain: ${{ inputs.infisical-domain }}
+        project-slug: ${{ inputs.infisical-project-slug }}
+        env-slug: ${{ inputs.infisical-env-slug }}
+        secret-path: ${{ inputs.infisical-secret-path }}
+        export-type: json
+        export-json-variable-name: INFISICAL_SECRETS_JSON
+
+    - name: Sync secrets to Vercel
+      run: |
+        set -euo pipefail
+
+        VERCEL_API="https://api.vercel.com/v10/projects"
+        PROJECT_ID="${{ inputs.vercel-project-id }}"
+        VERCEL_TOKEN="${{ inputs.vercel-token }}"
+        TARGET="${{ inputs.target }}"
+        TEAM_ID="${{ inputs.vercel-team-id }}"
+
+        # Build query params
+        QUERY="upsert=true"
+        if [ -n "$TEAM_ID" ]; then
+          QUERY="${QUERY}&teamId=${TEAM_ID}"
+        fi
+
+        SECRETS_JSON="$INFISICAL_SECRETS_JSON"
+
+        if [ -z "$SECRETS_JSON" ] || [ "$SECRETS_JSON" = "{}" ]; then
+          echo "::warning::No secrets found in Infisical at the specified path."
+          exit 0
+        fi
+
+        KEYS=$(echo "$SECRETS_JSON" | jq -r 'keys[]')
+        COUNT=$(echo "$SECRETS_JSON" | jq 'length')
+        echo "Found $COUNT secret(s) to sync."
+
+        FAILED=0
+        for KEY in $KEYS; do
+          VALUE=$(echo "$SECRETS_JSON" | jq -r --arg k "$KEY" '.[$k]')
+          echo "::add-mask::$VALUE"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg key "$KEY" \
+              --arg value "$VALUE" \
+              --arg target "$TARGET" \
+              '{key: $key, value: $value, type: "encrypted", target: [$target]}')")
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✔ Synced: $KEY"
+          else
+            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
+            FAILED=$((FAILED + 1))
+          fi
+        done
+
+        if [ "$FAILED" -gt 0 ]; then
+          echo "::error::$FAILED secret(s) failed to sync."
+          exit 1
+        fi
+
+        echo "Environment sync complete."
+      shell: bash
