@@ -30,8 +30,12 @@ inputs:
 
   infisical_method:
     required: false
-    description: "Infisical auth method (universal, oidc, aws-iam)"
-    default: "universal"
+    description: "Infisical auth method (oidc, universal, aws-iam)"
+    default: "oidc"
+
+  infisical_identity_id:
+    required: false
+    description: "Infisical Machine Identity ID (for oidc/aws-iam)"
 
   infisical_client_id:
     required: false
@@ -40,10 +44,6 @@ inputs:
   infisical_client_secret:
     required: false
     description: "Infisical Machine Identity client secret (for universal auth)"
-
-  infisical_identity_id:
-    required: false
-    description: "Infisical Machine Identity ID (for oidc/aws-iam)"
 
   infisical_domain:
     required: false
@@ -75,9 +75,9 @@ runs:
         vercel-team-id: ${{ inputs.vercel_org_id }}
         target: ${{ inputs.target }}
         infisical-method: ${{ inputs.infisical_method }}
+        infisical-identity-id: ${{ inputs.infisical_identity_id }}
         infisical-client-id: ${{ inputs.infisical_client_id }}
         infisical-client-secret: ${{ inputs.infisical_client_secret }}
-        infisical-identity-id: ${{ inputs.infisical_identity_id }}
         infisical-domain: ${{ inputs.infisical_domain }}
         infisical-project-slug: ${{ inputs.infisical_project_slug }}
         infisical-env-slug: ${{ inputs.infisical_env_slug }}

@@ -16,17 +16,17 @@ inputs:
     required: false
     default: "preview"
   infisical-method:
-    description: "Infisical auth method (universal, oidc, aws-iam)"
+    description: "Infisical auth method (oidc, universal, aws-iam)"
     required: false
-    default: "universal"
+    default: "oidc"
+  infisical-identity-id:
+    description: "Infisical Machine Identity ID (for oidc/aws-iam auth)"
+    required: false
   infisical-client-id:
     description: "Infisical Machine Identity client ID (for universal auth)"
     required: false
   infisical-client-secret:
     description: "Infisical Machine Identity client secret (for universal auth)"
-    required: false
-  infisical-identity-id:
-    description: "Infisical Machine Identity ID (for oidc/aws-iam auth)"
     required: false
   infisical-domain:
     description: "Infisical instance URL"
@@ -50,9 +50,9 @@ runs:
       uses: Infisical/secrets-action@v1.0.16
       with:
         method: ${{ inputs.infisical-method }}
+        identity-id: ${{ inputs.infisical-identity-id }}
         client-id: ${{ inputs.infisical-client-id }}
         client-secret: ${{ inputs.infisical-client-secret }}
-        identity-id: ${{ inputs.infisical-identity-id }}
         domain: ${{ inputs.infisical-domain }}
         project-slug: ${{ inputs.infisical-project-slug }}
         env-slug: ${{ inputs.infisical-env-slug }}
