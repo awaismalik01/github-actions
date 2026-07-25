@@ -48,7 +48,6 @@ runs:
   steps:
     - name: Fetch secrets from Infisical
       uses: Infisical/secrets-action@v1.0.16
-      id: infisical
       with:
         method: ${{ inputs.infisical-method }}
         client-id: ${{ inputs.infisical-client-id }}
@@ -58,8 +57,8 @@ runs:
         project-slug: ${{ inputs.infisical-project-slug }}
         env-slug: ${{ inputs.infisical-env-slug }}
         secret-path: ${{ inputs.infisical-secret-path }}
-        export-type: json
-        export-json-variable-name: INFISICAL_SECRETS_JSON
+        export-type: "file"
+        file-output-path: "/.env.infisical"
 
     - name: Sync secrets to Vercel
       run: |
@@ -71,27 +70,40 @@ runs:
         TARGET="${{ inputs.target }}"
         TEAM_ID="${{ inputs.vercel-team-id }}"
 
+        ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+
         # Build query params
         QUERY="upsert=true"
-        if [ -n "$TEAM_ID" ]; then
+        if [ -n "${TEAM_ID:-}" ]; then
           QUERY="${QUERY}&teamId=${TEAM_ID}"
         fi
 
-        SECRETS_JSON="$INFISICAL_SECRETS_JSON"
-
-        if [ -z "$SECRETS_JSON" ] || [ "$SECRETS_JSON" = "{}" ]; then
+        if [ ! -f "$ENV_FILE" ] || [ ! -s "$ENV_FILE" ]; then
           echo "::warning::No secrets found in Infisical at the specified path."
           exit 0
         fi
 
-        KEYS=$(echo "$SECRETS_JSON" | jq -r 'keys[]')
-        COUNT=$(echo "$SECRETS_JSON" | jq 'length')
-        echo "Found $COUNT secret(s) to sync."
-
+        COUNT=0
         FAILED=0
-        for KEY in $KEYS; do
-          VALUE=$(echo "$SECRETS_JSON" | jq -r --arg k "$KEY" '.[$k]')
+
+        while IFS= read -r line || [ -n "$line" ]; do
+          # Skip empty lines and comments
+          [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+          # Parse KEY=VALUE
+          KEY="${line%%=*}"
+          VALUE="${line#*=}"
+
+          # Strip surrounding quotes from value if present
+          VALUE="${VALUE#\"}"
+          VALUE="${VALUE%\"}"
+          VALUE="${VALUE#\'}"
+          VALUE="${VALUE%\'}"
+
+          [[ -z "$KEY" ]] && continue
+
           echo "::add-mask::$VALUE"
+          COUNT=$((COUNT + 1))
 
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
@@ -109,7 +121,12 @@ runs:
             echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
             FAILED=$((FAILED + 1))
           fi
-        done
+        done < "$ENV_FILE"
+
+        # Clean up
+        rm -f "$ENV_FILE"
+
+        echo "Found $COUNT secret(s) to sync."
 
         if [ "$FAILED" -gt 0 ]; then
           echo "::error::$FAILED secret(s) failed to sync."
