@@ -1,4 +1,4 @@
-# nestjs-vercel-deploy
+# nest-vercel-deploy
 
 A reusable GitHub Action that syncs Infisical secrets to a Vercel project, builds a Node.js/NestJS application, and deploys it to Vercel.
 
@@ -22,7 +22,7 @@ steps:
   - uses: actions/checkout@v4
 
   - name: Deploy to Vercel
-    uses: awaismalik01/github-actions/nestjs-vercel-deploy@v1
+    uses: awaismalik01/github-actions/nest-vercel-deploy@v1
     with:
       vercel_token: ${{ secrets.VERCEL_TOKEN }}
       vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
@@ -43,7 +43,7 @@ steps:
   - uses: actions/checkout@v4
 
   - name: Deploy to Vercel
-    uses: awaismalik01/github-actions/nestjs-vercel-deploy@v1
+    uses: awaismalik01/github-actions/nest-vercel-deploy@v1
     with:
       vercel_token: ${{ secrets.VERCEL_TOKEN }}
       vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
@@ -60,7 +60,7 @@ steps:
 
 ```yaml
 - name: Deploy with custom commands
-  uses: awaismalik01/github-actions/nestjs-vercel-deploy@v1
+  uses: awaismalik01/github-actions/nest-vercel-deploy@v1
   with:
     vercel_token: ${{ secrets.VERCEL_TOKEN }}
     vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}

@@ -8,7 +8,7 @@ A collection of reusable composite GitHub Actions for CI/CD automation.
 |--------|-------------|
 | [db-flyway](./db-flyway) | Run Flyway database migrations against PostgreSQL |
 | [secure-flyway-migration](./secure-flyway-migration) | Fetch per-schema credentials from Infisical and run Flyway migrations |
-| [nestjs-vercel-deploy](./nestjs-vercel-deploy) | Sync Infisical secrets, build, and deploy a Node.js/NestJS app to Vercel |
+| [nest-vercel-deploy](./nest-vercel-deploy) | Sync Infisical secrets, build, and deploy a Node.js/NestJS app to Vercel |
 | [vercel-infisical-vault-sync](./vercel-infisical-vault-sync) | Fetch secrets from Infisical and sync them to a Vercel project |
 
 ## Usage
@@ -51,12 +51,12 @@ Wraps `db-flyway` with automatic credential resolution from Infisical. Expects `
     schema: "auth_gateway"
 ```
 
-### nestjs-vercel-deploy
+### nest-vercel-deploy
 
 Syncs Infisical secrets to Vercel, builds a Node.js application, and deploys it.
 
 ```yaml
-- uses: awaismalik01/github-actions/nestjs-vercel-deploy@v1
+- uses: awaismalik01/github-actions/nest-vercel-deploy@v1
   with:
     vercel_token: ${{ secrets.VERCEL_TOKEN }}
     vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
