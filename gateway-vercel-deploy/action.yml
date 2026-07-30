@@ -1,0 +1,215 @@
+name: "Gateway Vercel Deploy"
+description: "Resolve vercel.json placeholders, sync Infisical secrets to Vercel, and deploy a Vercel edge gateway"
+
+inputs:
+  vercel_token:
+    required: true
+    description: "Vercel API token"
+
+  vercel_org_id:
+    required: true
+    description: "Vercel org/team ID"
+
+  vercel_project_id:
+    required: true
+    description: "Vercel project ID"
+
+  target:
+    required: true
+    description: "Vercel environment target (preview | production)"
+
+  vercel_json_path:
+    required: false
+    description: "Path to the vercel.json file to resolve placeholders in"
+    default: "vercel.json"
+
+  infisical_method:
+    required: false
+    description: "Infisical auth method (oidc, universal, aws-iam)"
+    default: "oidc"
+
+  infisical_identity_id:
+    required: false
+    description: "Infisical Machine Identity ID (for oidc/aws-iam)"
+
+  infisical_client_id:
+    required: false
+    description: "Infisical Machine Identity client ID (for universal auth)"
+
+  infisical_client_secret:
+    required: false
+    description: "Infisical Machine Identity client secret (for universal auth)"
+
+  infisical_domain:
+    required: false
+    description: "Infisical instance URL"
+    default: "https://app.infisical.com"
+
+  infisical_project_slug:
+    required: true
+    description: "Infisical project slug"
+
+  infisical_env_slug:
+    required: true
+    description: "Infisical environment slug (e.g. dev, staging, prod)"
+
+  infisical_secret_path:
+    required: false
+    description: "Infisical secret path"
+    default: "/"
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Fetch secrets from Infisical
+      uses: Infisical/secrets-action@v1.0.16
+      with:
+        method: ${{ inputs.infisical_method }}
+        identity-id: ${{ inputs.infisical_identity_id }}
+        client-id: ${{ inputs.infisical_client_id }}
+        client-secret: ${{ inputs.infisical_client_secret }}
+        domain: ${{ inputs.infisical_domain }}
+        project-slug: ${{ inputs.infisical_project_slug }}
+        env-slug: ${{ inputs.infisical_env_slug }}
+        secret-path: ${{ inputs.infisical_secret_path }}
+        export-type: "file"
+        file-output-path: "/.env.infisical"
+
+    - name: Resolve env vars in vercel.json
+      shell: bash
+      run: |
+        # Source secrets and build a substitution list from the file's keys only
+        ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+        VARS=""
+        while IFS='=' read -r key _; do
+          [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+          VARS="${VARS}\${${key}} "
+        done < "$ENV_FILE"
+
+        set -a
+        source "$ENV_FILE"
+        set +a
+
+        envsubst "$VARS" < ${{ inputs.vercel_json_path }} > vercel.resolved.json
+        mv vercel.resolved.json ${{ inputs.vercel_json_path }}
+
+    - name: Sync secrets to Vercel
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        VERCEL_API="https://api.vercel.com/v10/projects"
+        PROJECT_ID="${{ inputs.vercel_project_id }}"
+        VERCEL_TOKEN="${{ inputs.vercel_token }}"
+        TARGET="${{ inputs.target }}"
+        TEAM_ID="${{ inputs.vercel_org_id }}"
+
+        ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+
+        # Build query params
+        QUERY="upsert=true"
+        if [ -n "${TEAM_ID:-}" ]; then
+          QUERY="${QUERY}&teamId=${TEAM_ID}"
+        fi
+
+        if [ ! -f "$ENV_FILE" ] || [ ! -s "$ENV_FILE" ]; then
+          echo "::warning::No secrets found in Infisical at the specified path."
+          exit 0
+        fi
+
+        COUNT=0
+        FAILED=0
+
+        while IFS= read -r line || [ -n "$line" ]; do
+          # Skip empty lines and comments
+          [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+          # Parse KEY=VALUE
+          KEY="${line%%=*}"
+          VALUE="${line#*=}"
+
+          # Strip surrounding quotes from value if present
+          VALUE="${VALUE#\"}"
+          VALUE="${VALUE%\"}"
+          VALUE="${VALUE#\'}"
+          VALUE="${VALUE%\'}"
+
+          [[ -z "$KEY" ]] && continue
+
+          echo "::add-mask::$VALUE"
+          COUNT=$((COUNT + 1))
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg key "$KEY" \
+              --arg value "$VALUE" \
+              --arg target "$TARGET" \
+              '{key: $key, value: $value, type: "encrypted", target: [$target]}')")
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✔ Synced: $KEY"
+          else
+            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
+            FAILED=$((FAILED + 1))
+          fi
+        done < "$ENV_FILE"
+
+        # Clean up
+        rm -f "$ENV_FILE"
+
+        echo "Found $COUNT secret(s) to sync."
+
+        if [ "$FAILED" -gt 0 ]; then
+          echo "::error::$FAILED secret(s) failed to sync."
+          exit 1
+        fi
+
+        echo "Environment sync complete."
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v7.0.0
+      with:
+        node-version: "24"
+
+    - name: Install Vercel CLI
+      shell: bash
+      run: npm install --global vercel@latest
+
+    - name: Install dependencies
+      shell: bash
+      run: npm install
+
+    - name: Pull Vercel project settings
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
+
+    - name: Build Vercel artifacts
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel build --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel build --token=${{ inputs.vercel_token }}
+        fi
+
+    - name: Deploy to Vercel
+      shell: bash
+      env:
+        VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: |
+        if [ "${{ inputs.target }}" = "production" ]; then
+          vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }}
+        else
+          vercel deploy --prebuilt --token=${{ inputs.vercel_token }}
+        fi

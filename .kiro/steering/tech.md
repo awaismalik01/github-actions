@@ -10,8 +10,9 @@
 | Area | Technology |
 |------|-----------|
 | Database migrations | Flyway 9.22.3 (CLI, downloaded at runtime) |
-| Secrets management | Infisical (via `Infisical/secrets-action@v1.0.16`) |
+| Secrets management | Infisical (via `Infisical/secrets-action@v1.0.16`, default: OIDC auth) |
 | Deployment | Vercel CLI (latest, installed via npm) |
+| Env sync | Vercel REST API v10 (`curl` + `jq`) |
 | Node.js | v24 (setup via `actions/setup-node@v7.0.0`) |
 | Database | PostgreSQL (JDBC connections) |
 

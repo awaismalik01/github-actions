@@ -12,6 +12,9 @@ github-actions/
 ├── secure-flyway-migration/
 │   ├── action.yml
 │   └── README.md
+├── vercel-infisical-vault-sync/
+│   ├── action.yml
+│   └── README.md
 └── .kiro/                           # Kiro IDE configuration
     └── steering/                    # Steering rules for AI assistance
 ```

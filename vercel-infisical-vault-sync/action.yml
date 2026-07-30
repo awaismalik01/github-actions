@@ -1,0 +1,137 @@
+name: "Infisical → Vercel Env Sync"
+description: "Fetch environment variables from Infisical and sync them to a Vercel project"
+
+inputs:
+  vercel-token:
+    description: "Vercel API token"
+    required: true
+  vercel-project-id:
+    description: "Vercel Project ID"
+    required: true
+  vercel-team-id:
+    description: "Vercel Team ID (optional, for team-owned projects)"
+    required: false
+  target:
+    description: "Vercel environment target (development, preview, production)"
+    required: false
+    default: "preview"
+  infisical-method:
+    description: "Infisical auth method (oidc, universal, aws-iam)"
+    required: false
+    default: "oidc"
+  infisical-identity-id:
+    description: "Infisical Machine Identity ID (for oidc/aws-iam auth)"
+    required: false
+  infisical-client-id:
+    description: "Infisical Machine Identity client ID (for universal auth)"
+    required: false
+  infisical-client-secret:
+    description: "Infisical Machine Identity client secret (for universal auth)"
+    required: false
+  infisical-domain:
+    description: "Infisical instance URL"
+    required: false
+    default: "https://app.infisical.com"
+  infisical-project-slug:
+    description: "Infisical project slug"
+    required: true
+  infisical-env-slug:
+    description: "Infisical environment slug (e.g. dev, staging, prod)"
+    required: true
+  infisical-secret-path:
+    description: "Infisical secret path"
+    required: false
+    default: "/"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch secrets from Infisical
+      uses: Infisical/secrets-action@v1.0.16
+      with:
+        method: ${{ inputs.infisical-method }}
+        identity-id: ${{ inputs.infisical-identity-id }}
+        client-id: ${{ inputs.infisical-client-id }}
+        client-secret: ${{ inputs.infisical-client-secret }}
+        domain: ${{ inputs.infisical-domain }}
+        project-slug: ${{ inputs.infisical-project-slug }}
+        env-slug: ${{ inputs.infisical-env-slug }}
+        secret-path: ${{ inputs.infisical-secret-path }}
+        export-type: "file"
+        file-output-path: "/.env.infisical"
+
+    - name: Sync secrets to Vercel
+      run: |
+        set -euo pipefail
+
+        VERCEL_API="https://api.vercel.com/v10/projects"
+        PROJECT_ID="${{ inputs.vercel-project-id }}"
+        VERCEL_TOKEN="${{ inputs.vercel-token }}"
+        TARGET="${{ inputs.target }}"
+        TEAM_ID="${{ inputs.vercel-team-id }}"
+
+        ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+
+        # Build query params
+        QUERY="upsert=true"
+        if [ -n "${TEAM_ID:-}" ]; then
+          QUERY="${QUERY}&teamId=${TEAM_ID}"
+        fi
+
+        if [ ! -f "$ENV_FILE" ] || [ ! -s "$ENV_FILE" ]; then
+          echo "::warning::No secrets found in Infisical at the specified path."
+          exit 0
+        fi
+
+        COUNT=0
+        FAILED=0
+
+        while IFS= read -r line || [ -n "$line" ]; do
+          # Skip empty lines and comments
+          [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+          # Parse KEY=VALUE
+          KEY="${line%%=*}"
+          VALUE="${line#*=}"
+
+          # Strip surrounding quotes from value if present
+          VALUE="${VALUE#\"}"
+          VALUE="${VALUE%\"}"
+          VALUE="${VALUE#\'}"
+          VALUE="${VALUE%\'}"
+
+          [[ -z "$KEY" ]] && continue
+
+          echo "::add-mask::$VALUE"
+          COUNT=$((COUNT + 1))
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg key "$KEY" \
+              --arg value "$VALUE" \
+              --arg target "$TARGET" \
+              '{key: $key, value: $value, type: "encrypted", target: [$target]}')")
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✔ Synced: $KEY"
+          else
+            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
+            FAILED=$((FAILED + 1))
+          fi
+        done < "$ENV_FILE"
+
+        # Clean up
+        rm -f "$ENV_FILE"
+
+        echo "Found $COUNT secret(s) to sync."
+
+        if [ "$FAILED" -gt 0 ]; then
+          echo "::error::$FAILED secret(s) failed to sync."
+          exit 1
+        fi
+
+        echo "Environment sync complete."
+      shell: bash

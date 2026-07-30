@@ -6,10 +6,11 @@ This repository is a collection of reusable GitHub Actions (composite actions) f
 
 - **db-flyway** — Runs Flyway database migrations against PostgreSQL.
 - **secure-flyway-migration** — Fetches per-schema database credentials from Infisical (secrets manager), then delegates to `db-flyway` for the actual migration.
-- **nestjs-vercel-deploy** — Builds a Node.js/NestJS application and deploys it to Vercel (supports preview and production targets).
+- **nestjs-vercel-deploy** — Syncs Infisical secrets to Vercel (via `vercel-infisical-vault-sync`), builds a Node.js/NestJS application, and deploys it to Vercel (supports preview and production targets).
+- **vercel-infisical-vault-sync** — Fetches environment variables from Infisical and upserts them to a Vercel project via the Vercel API. Replaces manual Infisical-Vercel dashboard integrations.
 
 ## Design Philosophy
 
 - Each action is self-contained in its own directory with an `action.yml` and `README.md`.
-- Actions compose where possible (`secure-flyway-migration` calls `db-flyway` internally).
+- Actions compose where possible (`secure-flyway-migration` calls `db-flyway` internally; `nestjs-vercel-deploy` calls `vercel-infisical-vault-sync` internally).
 - Secrets are never logged; sensitive values are masked with `::add-mask::`.
