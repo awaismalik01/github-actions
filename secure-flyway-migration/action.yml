@@ -75,7 +75,7 @@ runs:
       shell: bash
 
     - name: Run Flyway migration
-      uses: awaismalik01/github-actions/db-flyway@v1
+      uses: awaismalik01/github-actions/db-flyway@debug
       with:
         db-url: ${{ env.DATABASE_URL }}
         db-user: ${{ env.FLYWAY_USER }}
