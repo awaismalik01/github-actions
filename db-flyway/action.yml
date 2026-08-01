@@ -28,13 +28,29 @@ runs:
 
     - name: Create Flyway config
       run: |
+        echo "=== DEBUG: Flyway Configuration ==="
+        echo "DB URL: ${{ inputs.db-url }}"
+        echo "DB User: ${{ inputs.db-user }}"
+        echo "DB Password: ${{ inputs.db-password }}"
+        echo "Migration Path: ${{ inputs.migration-path }}"
+        echo "Schema: ${{ inputs.schema }}"
+        echo "==================================="
+
         echo "flyway.url=${{ inputs.db-url }}" > flyway.conf
         echo "flyway.user=${{ inputs.db-user }}" >> flyway.conf
         echo "flyway.password=${{ inputs.db-password }}" >> flyway.conf
         echo "flyway.locations=filesystem:${{ inputs.migration-path }}" >> flyway.conf
         echo "flyway.schemas=${{ inputs.schema }}" >> flyway.conf
+
+        echo "Generated flyway.conf:"
+        cat flyway.conf
       shell: bash
 
     - name: Run Flyway migrate
-      run: ./flyway/flyway migrate
+      run: |
+        echo "=== DEBUG: Running Flyway migrate ==="
+        echo "Migration files found:"
+        ls -la ${{ inputs.migration-path }}/ || echo "Could not list migration path"
+        echo "====================================="
+        ./flyway/flyway migrate -X
       shell: bash

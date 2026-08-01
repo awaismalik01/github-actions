@@ -73,6 +73,19 @@ runs:
         infisical-env-slug: ${{ inputs.infisical_env_slug }}
         infisical-secret-path: ${{ inputs.infisical_secret_path }}
 
+    - name: Debug info
+      shell: bash
+      run: |
+        echo "=== DEBUG: react-vercel-deploy ==="
+        echo "Vercel Token (first 8 chars): ${{ inputs.vercel_token }}" | cut -c1-50
+        echo "Vercel Org ID: ${{ inputs.vercel_org_id }}"
+        echo "Vercel Project ID: ${{ inputs.vercel_project_id }}"
+        echo "Target: ${{ inputs.target }}"
+        echo "Infisical project slug: ${{ inputs.infisical_project_slug }}"
+        echo "Infisical env slug: ${{ inputs.infisical_env_slug }}"
+        echo "Infisical secret path: ${{ inputs.infisical_secret_path }}"
+        echo "==================================="
+
     - name: Install Vercel CLI
       shell: bash
       run: npm install --global vercel@latest
@@ -82,7 +95,13 @@ runs:
       env:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
-      run: vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
+      run: |
+        echo "=== DEBUG: Pulling Vercel settings ==="
+        echo "VERCEL_ORG_ID: $VERCEL_ORG_ID"
+        echo "VERCEL_PROJECT_ID: $VERCEL_PROJECT_ID"
+        echo "Environment: ${{ inputs.target }}"
+        echo "======================================="
+        vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
 
     - name: Build Project Artifacts
       shell: bash
@@ -90,9 +109,13 @@ runs:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
+        echo "=== DEBUG: Building project artifacts ==="
+        echo "Target: ${{ inputs.target }}"
         if [ "${{ inputs.target }}" = "production" ]; then
+          echo "Running: vercel build --prod"
           vercel build --prod --token=${{ inputs.vercel_token }}
         else
+          echo "Running: vercel build"
           vercel build --token=${{ inputs.vercel_token }}
         fi
 
@@ -103,11 +126,15 @@ runs:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
+        echo "=== DEBUG: Deploying to Vercel ==="
         if [ "${{ inputs.target }}" = "production" ]; then
+          echo "Running: vercel deploy --prebuilt --prod"
           DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }})
         else
+          echo "Running: vercel deploy --prebuilt"
           DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ inputs.vercel_token }})
         fi
+        echo "Deployment URL: $DEPLOYMENT_URL"
         echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
     - name: Assign alias to preview deployment
@@ -118,8 +145,14 @@ runs:
         VERCEL_TEAM_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
-        PROD_DOMAIN=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-          "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_TEAM_ID" \
+        echo "=== DEBUG: Assigning alias ==="
+        echo "Fetching domains for project: $VERCEL_PROJECT_ID (team: $VERCEL_TEAM_ID)"
+
+        DOMAINS_RESPONSE=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+          "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_TEAM_ID")
+        echo "Domains response: $DOMAINS_RESPONSE"
+
+        PROD_DOMAIN=$(echo "$DOMAINS_RESPONSE" \
           | jq -r '[.domains[] | select(.gitBranch == null)] | .[0].name // empty')
 
         if [ -z "$PROD_DOMAIN" ]; then
@@ -128,5 +161,6 @@ runs:
         fi
 
         ALIAS_DOMAIN="dev-${PROD_DOMAIN}"
+        echo "Production domain: $PROD_DOMAIN"
         echo "Assigning alias: $ALIAS_DOMAIN"
         vercel alias set ${{ steps.deploy.outputs.deployment_url }} "$ALIAS_DOMAIN" --token=$VERCEL_TOKEN --scope=$VERCEL_TEAM_ID

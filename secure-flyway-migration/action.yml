@@ -54,6 +54,12 @@ runs:
 
     - name: Resolve credentials and run migration
       run: |
+        echo "=== DEBUG: Infisical Secrets Resolved ==="
+        echo "FLYWAY_USER: ${FLYWAY_USER:-<not set>}"
+        echo "FLYWAY_PASSWORD: ${FLYWAY_PASSWORD:-<not set>}"
+        echo "DATABASE_URL: ${DATABASE_URL:-<not set>}"
+        echo "=========================================="
+
         if [ -z "$FLYWAY_USER" ]; then
           echo "::error::Secret FLYWAY_USER not found in Infisical"
           exit 1
@@ -66,10 +72,6 @@ runs:
           echo "::error::Secret DATABASE_URL not found in Infisical"
           exit 1
         fi
-
-        echo "::add-mask::$FLYWAY_USER"
-        echo "::add-mask::$FLYWAY_PASSWORD"
-        echo "::add-mask::$DATABASE_URL"
       shell: bash
 
     - name: Run Flyway migration

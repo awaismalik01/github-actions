@@ -76,23 +76,53 @@ runs:
         export-type: "file"
         file-output-path: "/.env.infisical"
 
+    - name: Debug info
+      shell: bash
+      run: |
+        echo "=== DEBUG: gateway-vercel-deploy ==="
+        echo "Vercel Token (first 8 chars): ${{ inputs.vercel_token }}" | cut -c1-50
+        echo "Vercel Org ID: ${{ inputs.vercel_org_id }}"
+        echo "Vercel Project ID: ${{ inputs.vercel_project_id }}"
+        echo "Target: ${{ inputs.target }}"
+        echo "vercel_json_path: ${{ inputs.vercel_json_path }}"
+        echo "Infisical project slug: ${{ inputs.infisical_project_slug }}"
+        echo "Infisical env slug: ${{ inputs.infisical_env_slug }}"
+        echo "Infisical secret path: ${{ inputs.infisical_secret_path }}"
+        echo "====================================="
+
     - name: Resolve env vars in vercel.json
       shell: bash
       run: |
         # Source secrets and build a substitution list from the file's keys only
         ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
+
+        echo "=== DEBUG: Env file contents before resolve ==="
+        cat "$ENV_FILE"
+        echo ""
+        echo "================================================"
+
         VARS=""
         while IFS='=' read -r key _; do
           [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
           VARS="${VARS}\${${key}} "
         done < "$ENV_FILE"
 
+        echo "Substitution vars: $VARS"
+
         set -a
         source "$ENV_FILE"
         set +a
 
+        echo "=== DEBUG: vercel.json BEFORE envsubst ==="
+        cat ${{ inputs.vercel_json_path }}
+        echo ""
+
         envsubst "$VARS" < ${{ inputs.vercel_json_path }} > vercel.resolved.json
         mv vercel.resolved.json ${{ inputs.vercel_json_path }}
+
+        echo "=== DEBUG: vercel.json AFTER envsubst ==="
+        cat ${{ inputs.vercel_json_path }}
+        echo ""
 
     - name: Sync secrets to Vercel
       shell: bash
@@ -107,11 +137,22 @@ runs:
 
         ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
 
+        # Debug: print all non-secret inputs
+        echo "=== DEBUG: Sync secrets to Vercel ==="
+        echo "Project ID: ${PROJECT_ID}"
+        echo "Team ID: ${TEAM_ID:-<not set>}"
+        echo "Target: ${TARGET}"
+        echo "Token (first 8 chars): ${VERCEL_TOKEN:0:8}..."
+        echo "Env file path: ${ENV_FILE}"
+        echo "======================================"
+
         # Build query params
         QUERY="upsert=true"
         if [ -n "${TEAM_ID:-}" ]; then
           QUERY="${QUERY}&teamId=${TEAM_ID}"
         fi
+
+        echo "Request URL pattern: ${VERCEL_API}/${PROJECT_ID}/env?${QUERY}"
 
         if [ ! -f "$ENV_FILE" ] || [ ! -s "$ENV_FILE" ]; then
           echo "::warning::No secrets found in Infisical at the specified path."
@@ -137,25 +178,34 @@ runs:
 
           [[ -z "$KEY" ]] && continue
 
-          echo "::add-mask::$VALUE"
           COUNT=$((COUNT + 1))
 
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          echo "--- Syncing: $KEY = $VALUE ---"
+
+          REQUEST_BODY=$(jq -n \
+            --arg key "$KEY" \
+            --arg value "$VALUE" \
+            --arg target "$TARGET" \
+            '{key: $key, value: $value, type: "encrypted", target: [$target]}')
+          echo "Request body: $REQUEST_BODY"
+          echo "URL: ${VERCEL_API}/${PROJECT_ID}/env?${QUERY}"
+
+          RESPONSE_FILE=$(mktemp)
+          HTTP_CODE=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" \
             -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg key "$KEY" \
-              --arg value "$VALUE" \
-              --arg target "$TARGET" \
-              '{key: $key, value: $value, type: "encrypted", target: [$target]}')")
+            -d "$REQUEST_BODY")
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✔ Synced: $KEY"
+            BODY=$(cat "$RESPONSE_FILE")
+            echo "✔ Synced: $KEY (HTTP $HTTP_CODE) — Response: $BODY"
           else
-            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
+            BODY=$(cat "$RESPONSE_FILE")
+            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE) — Response: $BODY"
             FAILED=$((FAILED + 1))
           fi
+          rm -f "$RESPONSE_FILE"
         done < "$ENV_FILE"
 
         # Clean up
@@ -188,7 +238,13 @@ runs:
       env:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
-      run: vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
+      run: |
+        echo "=== DEBUG: Pulling Vercel settings ==="
+        echo "VERCEL_ORG_ID: $VERCEL_ORG_ID"
+        echo "VERCEL_PROJECT_ID: $VERCEL_PROJECT_ID"
+        echo "Environment: ${{ inputs.target }}"
+        echo "======================================="
+        vercel pull --yes --environment=${{ inputs.target }} --token=${{ inputs.vercel_token }}
 
     - name: Build Vercel artifacts
       shell: bash
@@ -196,9 +252,13 @@ runs:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
+        echo "=== DEBUG: Building Vercel artifacts ==="
+        echo "Target: ${{ inputs.target }}"
         if [ "${{ inputs.target }}" = "production" ]; then
+          echo "Running: vercel build --prod"
           vercel build --prod --token=${{ inputs.vercel_token }}
         else
+          echo "Running: vercel build"
           vercel build --token=${{ inputs.vercel_token }}
         fi
 
@@ -209,11 +269,15 @@ runs:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
+        echo "=== DEBUG: Deploying to Vercel ==="
         if [ "${{ inputs.target }}" = "production" ]; then
+          echo "Running: vercel deploy --prebuilt --prod"
           DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }})
         else
+          echo "Running: vercel deploy --prebuilt"
           DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ inputs.vercel_token }})
         fi
+        echo "Deployment URL: $DEPLOYMENT_URL"
         echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
     - name: Assign alias to preview deployment
@@ -224,8 +288,14 @@ runs:
         VERCEL_TEAM_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
-        PROD_DOMAIN=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-          "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_TEAM_ID" \
+        echo "=== DEBUG: Assigning alias ==="
+        echo "Fetching domains for project: $VERCEL_PROJECT_ID (team: $VERCEL_TEAM_ID)"
+
+        DOMAINS_RESPONSE=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+          "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_TEAM_ID")
+        echo "Domains response: $DOMAINS_RESPONSE"
+
+        PROD_DOMAIN=$(echo "$DOMAINS_RESPONSE" \
           | jq -r '[.domains[] | select(.gitBranch == null)] | .[0].name // empty')
 
         if [ -z "$PROD_DOMAIN" ]; then
@@ -234,5 +304,6 @@ runs:
         fi
 
         ALIAS_DOMAIN="dev-${PROD_DOMAIN}"
+        echo "Production domain: $PROD_DOMAIN"
         echo "Assigning alias: $ALIAS_DOMAIN"
         vercel alias set ${{ steps.deploy.outputs.deployment_url }} "$ALIAS_DOMAIN" --token=$VERCEL_TOKEN --scope=$VERCEL_TEAM_ID
