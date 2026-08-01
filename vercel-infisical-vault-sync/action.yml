@@ -72,16 +72,31 @@ runs:
 
         ENV_FILE="${GITHUB_WORKSPACE}/.env.infisical"
 
+        # Debug: print all non-secret inputs
+        echo "=== DEBUG INFO ==="
+        echo "Project ID: ${PROJECT_ID}"
+        echo "Team ID: ${TEAM_ID:-<not set>}"
+        echo "Target: ${TARGET}"
+        echo "Token (first 8 chars): ${VERCEL_TOKEN:0:8}..."
+        echo "Env file path: ${ENV_FILE}"
+        echo "=================="
+
         # Build query params
         QUERY="upsert=true"
         if [ -n "${TEAM_ID:-}" ]; then
           QUERY="${QUERY}&teamId=${TEAM_ID}"
         fi
 
+        echo "Request URL pattern: ${VERCEL_API}/${PROJECT_ID}/env?${QUERY}"
+
         if [ ! -f "$ENV_FILE" ] || [ ! -s "$ENV_FILE" ]; then
           echo "::warning::No secrets found in Infisical at the specified path."
           exit 0
         fi
+
+        echo "Env file contents:"
+        cat "$ENV_FILE"
+        echo ""
 
         COUNT=0
         FAILED=0
@@ -102,25 +117,34 @@ runs:
 
           [[ -z "$KEY" ]] && continue
 
-          echo "::add-mask::$VALUE"
           COUNT=$((COUNT + 1))
 
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          echo "--- Syncing: $KEY = $VALUE ---"
+
+          REQUEST_BODY=$(jq -n \
+            --arg key "$KEY" \
+            --arg value "$VALUE" \
+            --arg target "$TARGET" \
+            '{key: $key, value: $value, type: "encrypted", target: [$target]}')
+          echo "Request body: $REQUEST_BODY"
+          echo "URL: ${VERCEL_API}/${PROJECT_ID}/env?${QUERY}"
+
+          RESPONSE_FILE=$(mktemp)
+          HTTP_CODE=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" \
             -X POST "${VERCEL_API}/${PROJECT_ID}/env?${QUERY}" \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg key "$KEY" \
-              --arg value "$VALUE" \
-              --arg target "$TARGET" \
-              '{key: $key, value: $value, type: "encrypted", target: [$target]}')")
+            -d "$REQUEST_BODY")
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✔ Synced: $KEY"
+            BODY=$(cat "$RESPONSE_FILE")
+            echo "✔ Synced: $KEY (HTTP $HTTP_CODE) — Response: $BODY"
           else
-            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE)"
+            BODY=$(cat "$RESPONSE_FILE")
+            echo "::error::✖ Failed to sync: $KEY (HTTP $HTTP_CODE) — Response: $BODY"
             FAILED=$((FAILED + 1))
           fi
+          rm -f "$RESPONSE_FILE"
         done < "$ENV_FILE"
 
         # Clean up
