@@ -58,7 +58,7 @@ runs:
 
   steps:
     - name: Sync Infisical secrets to Vercel
-      uses: ./vercel-infisical-vault-sync
+      uses: awaismalik01/github-actions/vercel-infisical-vault-sync@debug
       with:
         vercel-token: ${{ inputs.vercel_token }}
         vercel-project-id: ${{ inputs.vercel_project_id }}
