@@ -203,13 +203,36 @@ runs:
         fi
 
     - name: Deploy to Vercel
+      id: deploy
       shell: bash
       env:
         VERCEL_ORG_ID: ${{ inputs.vercel_org_id }}
         VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
       run: |
         if [ "${{ inputs.target }}" = "production" ]; then
-          vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }}
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ inputs.vercel_token }})
         else
-          vercel deploy --prebuilt --token=${{ inputs.vercel_token }}
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ inputs.vercel_token }})
         fi
+        echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+
+    - name: Assign alias to preview deployment
+      if: ${{ inputs.target != 'production' }}
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel_token }}
+        VERCEL_TEAM_ID: ${{ inputs.vercel_org_id }}
+        VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+      run: |
+        PROD_DOMAIN=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+          "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_TEAM_ID" \
+          | jq -r '[.domains[] | select(.gitBranch == null)] | .[0].name // empty')
+
+        if [ -z "$PROD_DOMAIN" ]; then
+          echo "::warning::Could not determine production domain — skipping alias assignment"
+          exit 0
+        fi
+
+        ALIAS_DOMAIN="dev-${PROD_DOMAIN}"
+        echo "Assigning alias: $ALIAS_DOMAIN"
+        vercel alias set ${{ steps.deploy.outputs.deployment_url }} "$ALIAS_DOMAIN" --token=$VERCEL_TOKEN --scope=$VERCEL_TEAM_ID
